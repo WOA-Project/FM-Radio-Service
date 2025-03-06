@@ -67,6 +67,31 @@ Client AcquireClientId()
 	return Server->AcquireClientId();
 }
 
+LSTATUS GetFMMiniportLibraryPath(LPWSTR Buffer, DWORD BufferSize)
+{
+	HKEY Key;
+	LSTATUS status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"System\\CurrentControlSet\\Control\\Tuner\\Audio\\FmRadio", 0, KEY_READ, &Key);
+	if (status != ERROR_SUCCESS)
+	{
+		throw std::system_error(status, std::system_category());
+	}
+
+	if (Key == nullptr)
+	{
+		throw std::system_error(::GetLastError(), std::system_category());
+	}
+
+	status = RegQueryValueEx(Key, L"MiniportDll", nullptr, nullptr, reinterpret_cast<LPBYTE>(Buffer), &BufferSize);
+	if (status != ERROR_SUCCESS)
+	{
+		throw std::system_error(status, std::system_category());
+	}
+
+	RegCloseKey(Key);
+
+	return ERROR_SUCCESS;
+}
+
 CommandListener::CommandListener(RadioTopology & Controller) :
 	LibraryProxy(MiniportTunerDevice, MiniportReceiveDevice),
 	TopologyController(Controller),
@@ -76,7 +101,12 @@ CommandListener::CommandListener(RadioTopology & Controller) :
 {
 	Server = this;
 
-	const auto FMSLMiniportAddress = LoadLibrary(L"qcfmslminiport.dll");
+	wchar_t MiniportDllPath[MAX_PATH];
+	DWORD BufferSize = sizeof(MiniportDllPath);
+
+	GetFMMiniportLibraryPath(MiniportDllPath, BufferSize);
+
+	const auto FMSLMiniportAddress = LoadLibrary(MiniportDllPath);
 	if (FMSLMiniportAddress == nullptr)
 	{
 		throw std::system_error(::GetLastError(), std::system_category());

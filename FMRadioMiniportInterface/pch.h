@@ -9,7 +9,13 @@
 #include <atlcoll.h>
 #include <atlbase.h>
 #include <atlstr.h>
+
+#define Speakers MySpeakers
+#define Headset MyHeadset
 #include <mmdeviceapi.h>
+#undef Speakers
+#undef Headset
+
 #include <devicetopology.h>
 #include "Audio API/Header Files/AudioTunerDrv.h"
 
