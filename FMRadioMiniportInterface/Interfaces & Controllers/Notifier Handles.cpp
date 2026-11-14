@@ -1,7 +1,9 @@
 #include "pch.h"
 #include "Notifier Handles.h"
 
-HTUNER_ASYNCCTXT NotifierHandles::AsyncContextToHANDLE(AsyncContextHandle Enum)
+HTUNER_ASYNCCTXT NotifierHandles::AsyncContextToHANDLE(
+    AsyncContextHandle Enum)
 {
-	return reinterpret_cast<HTUNER_ASYNCCTXT>(Enum);
+    return reinterpret_cast<HTUNER_ASYNCCTXT>(
+        static_cast<uintptr_t>(Enum));
 }

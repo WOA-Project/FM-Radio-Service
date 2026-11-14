@@ -3,223 +3,236 @@
 #include <Endpointvolume.h>
 #include "Checked Windows API Calls.h"
 
-const CLSID CLSID_MMDeviceEnumerator = { 0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E } };
+const CLSID CLSID_MMDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
 
-RadioTopology::RadioTopology() :
-	m_CommunicationSpeakers(nullptr),
-	Event(m_CommunicationSpeakers, OnAntennaStatusChange)
+BOOLEAN m_ComInitialized = FALSE;
+
+RadioTopology::RadioTopology() : m_CommunicationSpeakers(nullptr),
+                                 Event(m_CommunicationSpeakers, OnAntennaStatusChange)
 {
-	HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
-	if (FAILED(hr))
-	{
-		std::cout << "CoInitializeEx failed: " << std::error_code(hr, std::system_category()).message() << std::endl;
-		throw;
-	}
+    m_ComInitialized = SUCCEEDED(hr);
 
-	CComPtr<IMMDeviceEnumerator> spEnumerator;
-	CComPtr<IMMDeviceCollection> spMMDeviceCollection;
-	UINT deviceCount = 0;
+    if (FAILED(hr))
+    {
+        throw std::system_error(
+            hr,
+            std::system_category(),
+            "CoInitializeEx");
+    }
 
-	hr = spEnumerator.CoCreateInstance(CLSID_MMDeviceEnumerator, nullptr, CLSCTX_INPROC_SERVER);
-	hr = spEnumerator->RegisterEndpointNotificationCallback(&Event);
+    CComPtr<IMMDeviceEnumerator> spEnumerator;
+    CComPtr<IMMDeviceCollection> spMMDeviceCollection;
+    UINT deviceCount = 0;
 
-	if (SUCCEEDED(hr))
-	{
-		hr = spEnumerator->EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE | DEVICE_STATE_UNPLUGGED, &spMMDeviceCollection);
-	}
+    hr = spEnumerator.CoCreateInstance(CLSID_MMDeviceEnumerator, nullptr, CLSCTX_INPROC_SERVER);
+    hr = spEnumerator->RegisterEndpointNotificationCallback(&Event);
 
-	if (SUCCEEDED(hr))
-	{
-		hr = spMMDeviceCollection->GetCount(&deviceCount);
-	}
+    if (SUCCEEDED(hr))
+    {
+        hr = spEnumerator->EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE | DEVICE_STATE_UNPLUGGED, &spMMDeviceCollection);
+    }
 
-	// This loop will iterate through all the endpoints and look the KSNODETYPE_FM_RX endpoint
-	// For this endpoint it will then find a topology filter and a wave filter and activate IKSControl on these filters.
-	for (UINT i = 0; i < deviceCount; i++)
-	{
-		CComPtr<IMMDevice>       spEndpoint;
-		CComPtr<IMMDevice>       spDevice;
-		CComPtr<IPart>           spTopologyFilterEndpointConnectorPart;
-		CComPtr<IDeviceTopology> spEndpointTopology;
-		CComPtr<IConnector>      spEndpointConnector;
-		CComPtr<IConnector>      spTopologyFilterEndpointConnector;
-		CComPtr<IDeviceTopology> spAdapterTopology;
-		CComPtr<IKsControl>      spWaveKsControl;
-		CComHeapPtr<wchar_t>     wszAdapterTopologyDeviceId;
-		CComPtr<IMMDevice>       spAdapterDevice;
-		GUID                     guidEndpointClass = GUID_NULL;
-		CComPtr<IConnector>      spConnector;
-		CComPtr<IConnector>      spConConnectedTo;
-		CComPtr<IPart>           spConnectedPart;
-		CComPtr<IDeviceTopology> spMiniportTopology;
-		CComHeapPtr<wchar_t>     wszPhoneTopologyDeviceId;
-		CComPtr<IMMDevice>       spWaveAdapterDevice;
-		CComPtr<IPartsList>      spPartsList;
-		CComPtr<IPart>           spPart;
+    if (SUCCEEDED(hr))
+    {
+        hr = spMMDeviceCollection->GetCount(&deviceCount);
+    }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spMMDeviceCollection->Item(i, &spEndpoint);
-		}
+    // This loop will iterate through all the endpoints and look the KSNODETYPE_FM_RX endpoint
+    // For this endpoint it will then find a topology filter and a wave filter and activate IKSControl on these filters.
+    for (UINT i = 0; i < deviceCount; i++)
+    {
+        CComPtr<IMMDevice> spEndpoint;
+        CComPtr<IMMDevice> spDevice;
+        CComPtr<IPart> spTopologyFilterEndpointConnectorPart;
+        CComPtr<IDeviceTopology> spEndpointTopology;
+        CComPtr<IConnector> spEndpointConnector;
+        CComPtr<IConnector> spTopologyFilterEndpointConnector;
+        CComPtr<IDeviceTopology> spAdapterTopology;
+        CComPtr<IKsControl> spWaveKsControl;
+        CComHeapPtr<wchar_t> wszAdapterTopologyDeviceId;
+        CComPtr<IMMDevice> spAdapterDevice;
+        GUID guidEndpointClass = GUID_NULL;
+        CComPtr<IConnector> spConnector;
+        CComPtr<IConnector> spConConnectedTo;
+        CComPtr<IPart> spConnectedPart;
+        CComPtr<IDeviceTopology> spMiniportTopology;
+        CComHeapPtr<wchar_t> wszPhoneTopologyDeviceId;
+        CComPtr<IMMDevice> spWaveAdapterDevice;
+        CComPtr<IPartsList> spPartsList;
+        CComPtr<IPart> spPart;
 
-		// Get the IDeviceTopology interface from the endpoint device.
-		if (SUCCEEDED(hr))
-		{
-			hr = spEndpoint->Activate(
-				__uuidof(IDeviceTopology),
-				CLSCTX_ALL,
-				NULL,
-				(VOID**)&spEndpointTopology);
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spMMDeviceCollection->Item(i, &spEndpoint);
+        }
 
-		// Get the default connector for the endpoint device which is connected to
-		// the connector on the topology filter.
-		if (SUCCEEDED(hr))
-		{
-			hr = spEndpointTopology->GetConnector(0, &spEndpointConnector);
-		}
+        // Get the IDeviceTopology interface from the endpoint device.
+        if (SUCCEEDED(hr))
+        {
+            hr = spEndpoint->Activate(
+                __uuidof(IDeviceTopology),
+                CLSCTX_ALL,
+                NULL,
+                (VOID **)&spEndpointTopology);
+        }
 
-		// Get the endpoint connector on the topology filter.
-		if (SUCCEEDED(hr))
-		{
-			hr = spEndpointConnector->GetConnectedTo(&spTopologyFilterEndpointConnector);
-		}
+        // Get the default connector for the endpoint device which is connected to
+        // the connector on the topology filter.
+        if (SUCCEEDED(hr))
+        {
+            hr = spEndpointTopology->GetConnector(0, &spEndpointConnector);
+        }
 
-		// Get the endpoint connector part, endpoint class, and local ID.
-		if (SUCCEEDED(hr))
-		{
-			hr = spTopologyFilterEndpointConnector.QueryInterface(&spTopologyFilterEndpointConnectorPart);
-		}
+        // Get the endpoint connector on the topology filter.
+        if (SUCCEEDED(hr))
+        {
+            hr = spEndpointConnector->GetConnectedTo(&spTopologyFilterEndpointConnector);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spTopologyFilterEndpointConnectorPart->GetSubType(&guidEndpointClass);
-		}
+        // Get the endpoint connector part, endpoint class, and local ID.
+        if (SUCCEEDED(hr))
+        {
+            hr = spTopologyFilterEndpointConnector.QueryInterface(&spTopologyFilterEndpointConnectorPart);
+        }
 
-		// If this is the FM_RX node we've found the FM topology
-		if (SUCCEEDED(hr))
-		{
-			if (guidEndpointClass == KSNODETYPE_HEADSET_SPEAKERS) // or COMMUNICATION_SPEAKER
-			{
-				CommunicationSpeakersPart = spTopologyFilterEndpointConnectorPart;
-				hr = spEndpoint->GetId(&m_CommunicationSpeakers);
-				continue;
-			}
+        if (SUCCEEDED(hr))
+        {
+            hr = spTopologyFilterEndpointConnectorPart->GetSubType(&guidEndpointClass);
+        }
 
-			if (guidEndpointClass != KSNODETYPE_FM_RX)
-			{
-				continue;
-			}
-		}
+        // If this is the FM_RX node we've found the FM topology
+        if (SUCCEEDED(hr))
+        {
+            if (guidEndpointClass == KSNODETYPE_HEADSET_SPEAKERS) // or COMMUNICATION_SPEAKER
+            {
+                CommunicationSpeakersPart = spTopologyFilterEndpointConnectorPart;
+                hr = spEndpoint->GetId(&m_CommunicationSpeakers);
+                continue;
+            }
 
-		// Get the IDeviceTopology interface for the adapter device from the endpoint connector part.
-		if (SUCCEEDED(hr))
-		{
-			hr = spTopologyFilterEndpointConnectorPart->GetTopologyObject(&spAdapterTopology);
-		}
+            if (guidEndpointClass != KSNODETYPE_FM_RX)
+            {
+                continue;
+            }
+        }
 
-		// Activate the KSControl on topo filter
-		if (SUCCEEDED(hr))
-		{
-			hr = spAdapterTopology->GetDeviceId(&wszAdapterTopologyDeviceId);
-		}
+        // Get the IDeviceTopology interface for the adapter device from the endpoint connector part.
+        if (SUCCEEDED(hr))
+        {
+            hr = spTopologyFilterEndpointConnectorPart->GetTopologyObject(&spAdapterTopology);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spEnumerator->GetDevice(wszAdapterTopologyDeviceId, &spAdapterDevice);
-		}
+        // Activate the KSControl on topo filter
+        if (SUCCEEDED(hr))
+        {
+            hr = spAdapterTopology->GetDeviceId(&wszAdapterTopologyDeviceId);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			/*IAudioEndpointVolume* Client;
-			Windows::CheckedMemberAPICall(&(*spEndpoint), &IMMDevice::Activate, __uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, (void**)& Client);*/
+        if (SUCCEEDED(hr))
+        {
+            hr = spEnumerator->GetDevice(wszAdapterTopologyDeviceId, &spAdapterDevice);
+        }
 
-			hr = spAdapterDevice->Activate(
-				__uuidof(IKsControl),
-				CLSCTX_ALL,
-				NULL,
-				(VOID**)&m_spTopologyKsControl);
+        if (SUCCEEDED(hr))
+        {
+            /*IAudioEndpointVolume* Client;
+            Windows::CheckedMemberAPICall(&(*spEndpoint), &IMMDevice::Activate, __uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, (void**)& Client);*/
 
-			if (FAILED(hr))
-			{
-				std::wcerr << L"Activating KsControl for Topo filter failed. hr=" << hr << std::endl;
-			}
-		}
+            hr = spAdapterDevice->Activate(
+                __uuidof(IKsControl),
+                CLSCTX_ALL,
+                NULL,
+                (VOID **)&m_spTopologyKsControl);
 
-		// Now proceed with enumerating the rest of the topology
-		if (SUCCEEDED(hr))
-		{
-			hr = spTopologyFilterEndpointConnectorPart->EnumPartsOutgoing(&spPartsList);
-		}
+            if (FAILED(hr))
+            {
+                std::wcerr << L"Activating KsControl for Topo filter failed. hr=" << hr << std::endl;
+            }
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spPartsList->GetPart(0, &spPart);
-		}
+        // Now proceed with enumerating the rest of the topology
+        if (SUCCEEDED(hr))
+        {
+            hr = spTopologyFilterEndpointConnectorPart->EnumPartsOutgoing(&spPartsList);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spPart.QueryInterface(&spConnector);
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spPartsList->GetPart(0, &spPart);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spConnector->GetConnectedTo(&spConConnectedTo);
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spPart.QueryInterface(&spConnector);
+        }
 
-		// retrieve the part that this connector is on, which should be a part
-		// on the miniport.
-		if (SUCCEEDED(hr))
-		{
-			hr = spConConnectedTo.QueryInterface(&spConnectedPart);
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spConnector->GetConnectedTo(&spConConnectedTo);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spConnectedPart->GetTopologyObject(&spMiniportTopology);
-		}
+        // retrieve the part that this connector is on, which should be a part
+        // on the miniport.
+        if (SUCCEEDED(hr))
+        {
+            hr = spConConnectedTo.QueryInterface(&spConnectedPart);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spMiniportTopology->GetDeviceId(&wszPhoneTopologyDeviceId);
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spConnectedPart->GetTopologyObject(&spMiniportTopology);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spEnumerator->GetDevice(wszPhoneTopologyDeviceId, &spWaveAdapterDevice);
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spMiniportTopology->GetDeviceId(&wszPhoneTopologyDeviceId);
+        }
 
-		if (SUCCEEDED(hr))
-		{
-			hr = spWaveAdapterDevice->Activate(
-				__uuidof(IKsControl),
-				CLSCTX_ALL,
-				NULL,
-				(VOID**)&spWaveKsControl);
+        if (SUCCEEDED(hr))
+        {
+            hr = spEnumerator->GetDevice(wszPhoneTopologyDeviceId, &spWaveAdapterDevice);
+        }
 
-			if (FAILED(hr))
-			{
-				std::wcerr << L"Activating KsControl for Wave filter failed. hr =" << hr << std::endl;
-			}
-		}
+        if (SUCCEEDED(hr))
+        {
+            hr = spWaveAdapterDevice->Activate(
+                __uuidof(IKsControl),
+                CLSCTX_ALL,
+                NULL,
+                (VOID **)&spWaveKsControl);
 
-		if (SUCCEEDED(hr))
-		{
-			m_spWaveKsControl = spWaveKsControl;
-		}
-	}
+            if (FAILED(hr))
+            {
+                std::wcerr << L"Activating KsControl for Wave filter failed. hr =" << hr << std::endl;
+            }
+        }
 
-	if (m_CommunicationSpeakers == nullptr)
-	{
-		throw;
-	}
+        if (SUCCEEDED(hr))
+        {
+            m_spWaveKsControl = spWaveKsControl;
+        }
+    }
 
-	if (FAILED(hr))
-	{
-		std::wcerr << "Initialization failed with hr=" << hr << std::endl;
-		throw;
-	}
+    if (m_CommunicationSpeakers == nullptr)
+    {
+        throw std::runtime_error(
+            "Communication speaker endpoint not found.");
+    }
+
+    if (FAILED(hr))
+    {
+        std::wcerr
+            << L"Initialization failed with hr="
+            << hr
+            << std::endl;
+
+        throw std::system_error(
+            hr,
+            std::system_category(),
+            "RadioTopology initialization failed");
+    }
 }
 
 // Sets fm volume. This is a property on topology filter.
@@ -228,8 +241,8 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
     HRESULT hr = S_OK;
     KSPROPERTY volumeProp;
     ULONG ulBytesReturned;
-    KSPROPERTY_DESCRIPTION desc = { 0 };
-    KSPROPERTY_DESCRIPTION * pdesc = NULL;
+    KSPROPERTY_DESCRIPTION desc = {0};
+    KSPROPERTY_DESCRIPTION *pdesc = NULL;
     PKSPROPERTY_MEMBERSHEADER pKsPropMembHead = NULL;
     PKSPROPERTY_STEPPING_LONG pKsPropStepLong = NULL;
 
@@ -253,12 +266,11 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
             sizeof(volumeSupportProp),
             &desc,
             sizeof(desc),
-            &cbSupportProp
-            );
+            &cbSupportProp);
 
         if (SUCCEEDED(hr) && desc.DescriptionSize > sizeof(desc))
         {
-            pdesc = (KSPROPERTY_DESCRIPTION*)CoTaskMemAlloc(desc.DescriptionSize);
+            pdesc = (KSPROPERTY_DESCRIPTION *)CoTaskMemAlloc(desc.DescriptionSize);
             if (NULL == pdesc)
             {
                 hr = E_OUTOFMEMORY;
@@ -271,8 +283,7 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
                     sizeof(volumeSupportProp),
                     pdesc,
                     desc.DescriptionSize,
-                    &cbSupportProp
-                    );
+                    &cbSupportProp);
             }
 
             if (SUCCEEDED(hr))
@@ -282,9 +293,9 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
                     pdesc->PropTypeSet.Flags != 0 ||
                     pdesc->MembersListCount < 1 ||
                     pdesc->Reserved != 0 ||
-                    pdesc->DescriptionSize < (sizeof(KSPROPERTY_DESCRIPTION)+sizeof(KSPROPERTY_MEMBERSHEADER)+sizeof(KSPROPERTY_STEPPING_LONG)))
+                    pdesc->DescriptionSize < (sizeof(KSPROPERTY_DESCRIPTION) + sizeof(KSPROPERTY_MEMBERSHEADER) + sizeof(KSPROPERTY_STEPPING_LONG)))
                 {
-					wprintf(L"Full volume basicsupport Property Set is invalid or isn't large enough to include stepping information\n");
+                    wprintf(L"Full volume basicsupport Property Set is invalid or isn't large enough to include stepping information\n");
                     hr = E_INVALIDARG;
                 }
             }
@@ -296,32 +307,42 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
                 if (pKsPropMembHead->MembersFlags != KSPROPERTY_MEMBER_STEPPEDRANGES ||
                     pKsPropMembHead->MembersSize < sizeof(KSPROPERTY_STEPPING_LONG) ||
                     pKsPropMembHead->MembersCount < 1 ||
-                    (flags != (KSPROPERTY_MEMBER_FLAG_BASICSUPPORT_MULTICHANNEL | KSPROPERTY_MEMBER_FLAG_BASICSUPPORT_UNIFORM)
-                    && flags != 0))
+                    (flags != (KSPROPERTY_MEMBER_FLAG_BASICSUPPORT_MULTICHANNEL | KSPROPERTY_MEMBER_FLAG_BASICSUPPORT_UNIFORM) && flags != 0))
                 {
-					wprintf(L"Volume basicsupport Property members invalid\n");
+                    wprintf(L"Volume basicsupport Property members invalid\n");
                     hr = E_INVALIDARG;
                 }
             }
 
             if (SUCCEEDED(hr))
             {
-                pKsPropStepLong = reinterpret_cast<PKSPROPERTY_STEPPING_LONG>(pKsPropMembHead + 1);
+                const auto RequiredSize =
+                    sizeof(KSPROPERTY_DESCRIPTION) +
+                    sizeof(KSPROPERTY_MEMBERSHEADER) +
+                    sizeof(KSPROPERTY_STEPPING_LONG);
 
-                // Round volume to nearest supported value
-                volume = VALUE_NORMALIZE_IN_RANGE_EX(
-                    volume,
-                    pKsPropStepLong->Bounds.SignedMinimum,
-                    pKsPropStepLong->Bounds.SignedMaximum,
-                    (LONG)(pKsPropStepLong->SteppingDelta)
-                    );
+                if (pdesc->DescriptionSize < RequiredSize)
+                {
+                    hr = E_INVALIDARG;
+                }
 
-				wprintf(L"Applying driver stepping: %d %d %d (step, min, max); new volume = %d\n",
-                    pKsPropStepLong->SteppingDelta,
-                    pKsPropStepLong->Bounds.SignedMinimum,
-                    pKsPropStepLong->Bounds.SignedMaximum,
-                    volume
-                    );
+                if (SUCCEEDED(hr))
+                {
+                    pKsPropStepLong = reinterpret_cast<PKSPROPERTY_STEPPING_LONG>(pKsPropMembHead + 1);
+
+                    // Round volume to nearest supported value
+                    volume = VALUE_NORMALIZE_IN_RANGE_EX(
+                        volume,
+                        pKsPropStepLong->Bounds.SignedMinimum,
+                        pKsPropStepLong->Bounds.SignedMaximum,
+                        (LONG)(pKsPropStepLong->SteppingDelta));
+
+                    wprintf(L"Applying driver stepping: %d %d %d (step, min, max); new volume = %d\n",
+                            pKsPropStepLong->SteppingDelta,
+                            pKsPropStepLong->Bounds.SignedMinimum,
+                            pKsPropStepLong->Bounds.SignedMaximum,
+                            volume);
+                }
             }
         }
     }
@@ -337,8 +358,7 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
             sizeof(volumeProp),
             &volume,
             sizeof(LONG),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     if (pdesc)
@@ -348,9 +368,8 @@ HRESULT RadioTopology::SetFmVolume(_In_ LONG volume)
     return hr;
 }
 
-
 // Returns current fm volume. This is a property on topology filter.
-HRESULT RadioTopology::GetFmVolume(_Out_ LONG* plVolume)
+HRESULT RadioTopology::GetFmVolume(_Out_ LONG *plVolume)
 {
     HRESULT hr = S_OK;
     KSPROPERTY volumeProp;
@@ -373,8 +392,7 @@ HRESULT RadioTopology::GetFmVolume(_Out_ LONG* plVolume)
             sizeof(volumeProp),
             &vol,
             sizeof(LONG),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     if (SUCCEEDED(hr))
@@ -391,8 +409,8 @@ HRESULT RadioTopology::SetFmEndpointId(_In_ LONG index)
     HRESULT hr = S_OK;
     KSPROPERTY endpointIdProp;
     ULONG ulBytesReturned;
-    KSPROPERTY_DESCRIPTION desc = { 0 };
-    KSPROPERTY_DESCRIPTION * pdesc = NULL;
+    KSPROPERTY_DESCRIPTION desc = {0};
+    KSPROPERTY_DESCRIPTION *pdesc = NULL;
     PKSPROPERTY_MEMBERSHEADER pKsPropMembHead = NULL;
     PKSTOPOLOGY_ENDPOINTID pKsPropEndpointId = NULL;
     ULONG endpointCount = 0;
@@ -417,12 +435,11 @@ HRESULT RadioTopology::SetFmEndpointId(_In_ LONG index)
             sizeof(endpointIdSupportProp),
             &desc,
             sizeof(desc),
-            &cbSupportProp
-            );
+            &cbSupportProp);
 
         if (SUCCEEDED(hr) && desc.DescriptionSize > sizeof(desc))
         {
-            pdesc = (KSPROPERTY_DESCRIPTION*)CoTaskMemAlloc(desc.DescriptionSize);
+            pdesc = (KSPROPERTY_DESCRIPTION *)CoTaskMemAlloc(desc.DescriptionSize);
             if (NULL == pdesc)
             {
                 hr = E_OUTOFMEMORY;
@@ -435,8 +452,7 @@ HRESULT RadioTopology::SetFmEndpointId(_In_ LONG index)
                     sizeof(endpointIdSupportProp),
                     pdesc,
                     desc.DescriptionSize,
-                    &cbSupportProp
-                    );
+                    &cbSupportProp);
             }
 
             if (SUCCEEDED(hr))
@@ -446,9 +462,9 @@ HRESULT RadioTopology::SetFmEndpointId(_In_ LONG index)
                     pdesc->PropTypeSet.Flags != 0 ||
                     pdesc->MembersListCount < 1 ||
                     pdesc->Reserved != 0 ||
-                    pdesc->DescriptionSize < (sizeof(KSPROPERTY_DESCRIPTION)+sizeof(KSPROPERTY_MEMBERSHEADER)+sizeof(KSTOPOLOGY_ENDPOINTID)))
+                    pdesc->DescriptionSize < (sizeof(KSPROPERTY_DESCRIPTION) + sizeof(KSPROPERTY_MEMBERSHEADER) + sizeof(KSTOPOLOGY_ENDPOINTID)))
                 {
-					wprintf(L"Full endpointid basicsupport Property Set is invalid or isn't large enough to include at least 1 endpoint id\n");
+                    wprintf(L"Full endpointid basicsupport Property Set is invalid or isn't large enough to include at least 1 endpoint id\n");
                     hr = E_INVALIDARG;
                 }
             }
@@ -461,19 +477,37 @@ HRESULT RadioTopology::SetFmEndpointId(_In_ LONG index)
                     pKsPropMembHead->MembersCount < 1 ||
                     pKsPropMembHead->Flags != 0)
                 {
-					wprintf(L"FM Endpoint basicsupport Property members invalid\n");
+                    wprintf(L"FM Endpoint basicsupport Property members invalid\n");
                     hr = E_INVALIDARG;
                 }
                 endpointCount = pKsPropMembHead->MembersCount;
+
+                if (endpointCount > 128)
+                {
+                    hr = E_INVALIDARG;
+                }
             }
 
             if (SUCCEEDED(hr))
             {
-                pKsPropEndpointId = reinterpret_cast<PKSTOPOLOGY_ENDPOINTID>(pKsPropMembHead + 1);
+                const auto RequiredSize =
+                    sizeof(KSPROPERTY_DESCRIPTION) +
+                    sizeof(KSPROPERTY_MEMBERSHEADER) +
+                    (sizeof(KSTOPOLOGY_ENDPOINTID) * endpointCount);
 
-                for (ULONG i = 0; i < endpointCount; ++i)
+                if (pdesc->DescriptionSize < RequiredSize)
                 {
-					wprintf(L"FM Endpoint %d: %s (%d)\n", i, pKsPropEndpointId[i].TopologyName, pKsPropEndpointId[i].PinId);
+                    hr = E_INVALIDARG;
+                }
+
+                if (SUCCEEDED(hr))
+                {
+                    pKsPropEndpointId = reinterpret_cast<PKSTOPOLOGY_ENDPOINTID>(pKsPropMembHead + 1);
+
+                    for (ULONG i = 0; i < endpointCount; ++i)
+                    {
+                        wprintf(L"FM Endpoint %d: %s (%d)\n", i, pKsPropEndpointId[i].TopologyName, pKsPropEndpointId[i].PinId);
+                    }
                 }
             }
         }
@@ -496,8 +530,7 @@ HRESULT RadioTopology::SetFmEndpointId(_In_ LONG index)
             sizeof(endpointIdProp),
             &pKsPropEndpointId[index],
             sizeof(KSTOPOLOGY_ENDPOINTID),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     if (pdesc)
@@ -512,8 +545,7 @@ HRESULT RadioTopology::GetFmEndpointId(_Out_ PKSTOPOLOGY_ENDPOINTID pEndpointId)
     HRESULT hr = S_OK;
     KSPROPERTY endpointIdProp;
     ULONG ulBytesReturned;
-    KSTOPOLOGY_ENDPOINTID ksEndpointId = { 0 };
-
+    KSTOPOLOGY_ENDPOINTID ksEndpointId = {0};
 
     if (pEndpointId == NULL || m_spTopologyKsControl == NULL)
     {
@@ -531,8 +563,7 @@ HRESULT RadioTopology::GetFmEndpointId(_Out_ PKSTOPOLOGY_ENDPOINTID pEndpointId)
             sizeof(endpointIdProp),
             &ksEndpointId,
             sizeof(KSTOPOLOGY_ENDPOINTID),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     if (SUCCEEDED(hr))
@@ -548,8 +579,7 @@ HRESULT RadioTopology::GetFmAntennaEndpointId(_Out_ PKSTOPOLOGY_ENDPOINTID pEndp
     HRESULT hr = S_OK;
     KSPROPERTY endpointIdProp;
     ULONG ulBytesReturned;
-    KSTOPOLOGY_ENDPOINTID ksEndpointId = { 0 };
-
+    KSTOPOLOGY_ENDPOINTID ksEndpointId = {0};
 
     if (pEndpointId == NULL || m_spTopologyKsControl == NULL)
     {
@@ -567,8 +597,7 @@ HRESULT RadioTopology::GetFmAntennaEndpointId(_Out_ PKSTOPOLOGY_ENDPOINTID pEndp
             sizeof(endpointIdProp),
             &ksEndpointId,
             sizeof(KSTOPOLOGY_ENDPOINTID),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     if (SUCCEEDED(hr))
@@ -601,13 +630,12 @@ HRESULT RadioTopology::SetFmState(_In_ BOOL state)
             sizeof(stateProp),
             &state,
             sizeof(BOOL),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     return hr;
 }
-HRESULT RadioTopology::GetFmState(_Out_ BOOL * pbState)
+HRESULT RadioTopology::GetFmState(_Out_ BOOL *pbState)
 {
     HRESULT hr = S_OK;
     KSPROPERTY stateProp;
@@ -630,8 +658,7 @@ HRESULT RadioTopology::GetFmState(_Out_ BOOL * pbState)
             sizeof(stateProp),
             &state,
             sizeof(BOOL),
-            &ulBytesReturned
-            );
+            &ulBytesReturned);
     }
 
     if (SUCCEEDED(hr))
@@ -644,9 +671,36 @@ HRESULT RadioTopology::GetFmState(_Out_ BOOL * pbState)
 
 bool RadioTopology::IsAntennaPresent()
 {
-	IKsJackDescription * Jack;
-	CommunicationSpeakersPart->Activate(CLSCTX_INPROC_SERVER, __uuidof(IKsJackDescription), reinterpret_cast<void **>(&Jack));
-	KSJACK_DESCRIPTION Description;
-	Jack->GetJackDescription(0, &Description);
-	return Description.IsConnected;
+    if (!CommunicationSpeakersPart)
+    {
+        return false;
+    }
+
+    CComPtr<IKsJackDescription> Jack;
+
+    HRESULT hr = CommunicationSpeakersPart->Activate(
+        CLSCTX_INPROC_SERVER,
+        __uuidof(IKsJackDescription),
+        reinterpret_cast<void **>(&Jack));
+
+    if (FAILED(hr) || !Jack)
+    {
+        return false;
+    }
+
+    KSJACK_DESCRIPTION Description = {};
+
+    hr = Jack->GetJackDescription(0, &Description);
+
+    if (FAILED(hr))
+    {
+        return false;
+    }
+    return Description.IsConnected != FALSE;
+}
+
+RadioTopology::~RadioTopology()
+{
+    if (m_ComInitialized)
+        CoUninitialize();
 }
