@@ -12,7 +12,7 @@
 #define VALUE_NORMALIZE_IN_RANGE_EX(v, min, max, step) \
     ((v) > (max) ? (max) : \
     (v) < (min) ? (min) : \
-    VALUE_NORMALIZE((v), (step))
+    VALUE_NORMALIZE((v), (step)))
 
 #define MAX_PROVIDERIDS 4
 

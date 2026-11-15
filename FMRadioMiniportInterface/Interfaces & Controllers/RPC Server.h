@@ -121,7 +121,7 @@ public:
                 Status != RPC_S_ALREADY_LISTENING)
             {
                 Windows::CheckedRPCCall(
-                    [](
+                    [Status](
                         unsigned long,
                         unsigned long,
                         int)
